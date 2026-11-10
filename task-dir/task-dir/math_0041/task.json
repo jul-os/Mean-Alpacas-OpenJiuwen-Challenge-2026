@@ -1,0 +1,8 @@
+{
+  "task_id": "math_0041",
+  "task_type": "math",
+  "instruction": "Compute the definite integral of (ln x)/x from 1 to e. Write the answer as an irreducible fraction a/b. Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
+  "reward": 3,
+  "expected": "1/2",
+  "check": "exact_str"
+}

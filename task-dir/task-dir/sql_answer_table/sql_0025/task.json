@@ -1,0 +1,8 @@
+{
+  "task_id": "sql_0025",
+  "task_type": "sql",
+  "instruction": "The SQLite database 'Database for tasks.sqlite3' in the current directory has tables: CATEGORY(WARE, CLASS) - which category (CLASS) a ware belongs to (a ware may belong to several categories); MANUFACTURER(BILL_ID, COMPANY) - bills of materials and the companies owning them; MATERIAL(BILL_ID, WARE, AMOUNT) - materials used by a bill; PRODUCT(BILL_ID, WARE, AMOUNT, PRICE) - wares produced by a bill, with amount and price. A bill may produce several wares. Show all the companies that produce the same ware by more than 2 different ways (bills of materials). Write one company name per line, sorted alphabetically. Compute the answer with bash (sqlite3 and/or python3). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
+  "reward": 5,
+  "expected": "CSP Inc.\nCellcom Israel\nChina Sunergy Co.\nJupai Holdings Limited\nLittelfuse\nManhattan Bridge Capital\nPlexus Corp.\nPorter Bancorp\nPrimerica\nRoyal Bank Scotland plc (The)\nSotherly Hotels LP\nSypris Solutions",
+  "check": "exact_str"
+}

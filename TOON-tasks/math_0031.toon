@@ -1,0 +1,6 @@
+task_id: math_0031
+task_type: math
+instruction: "Let r1 and r2 be the roots of x^2 - 7x + 11 = 0. Compute r1^2 + r2^2. Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
+reward: 1
+expected: "27"
+check: exact_int

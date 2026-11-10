@@ -1,0 +1,13 @@
+services:
+  firmware-update:
+    owner: Northwind Labs
+    version: 4.2.0
+    port: 8443
+  telemetry:
+    owner: Aurora Metrics
+    version: 1.7.3
+    port: 9090
+  fleet-sync:
+    owner: Vela Freight
+    version: 2.0.1
+    port: 7070

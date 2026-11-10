@@ -1,0 +1,8 @@
+{
+  "task_id": "coding_0030",
+  "task_type": "coding",
+  "instruction": "There is no input file. Print the number of prime numbers less than 1000000. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory.",
+  "reward": 1,
+  "expected": "78498",
+  "check": "exact_int"
+}

@@ -1,0 +1,9 @@
+sku,name,category,price,stock
+N-100,Northwind Gateway,Firmware,120.0,40
+S-210,Sensora Hub,Sensors,340.0,12
+S-330,Sensora Probe,Sensors,89.5,150
+F-010,Copperline Ration Pack,Food,7.25,900
+F-022,Copperline Coffee,Food,11.40,320
+V-500,Vela Pallet Tracker,Logistics,56.0,75
+S-331,Sensora Probe XL,Sensors,145.0,20
+N-120,Northwind Bootloader,Firmware,45.0,5

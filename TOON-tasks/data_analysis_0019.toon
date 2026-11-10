@@ -1,0 +1,6 @@
+task_id: data_analysis_0019
+task_type: data_analysis
+instruction: "The file inventory_dirty.csv has columns sku,item,qty,price (14 rows). Values of price may contain '$' and thousand commas; a blank field means missing value; fields containing commas are quoted. What is the total inventory value (qty multiplied by price) across all rows, rounded to the nearest whole number? Ignore the rows with a missing qty or price and count duplicate rows separately. Use bash with python3 to compute it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
+reward: 2
+expected: "13569"
+check: exact_int

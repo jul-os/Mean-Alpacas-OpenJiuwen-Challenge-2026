@@ -1,0 +1,6 @@
+task_id: coding_0029
+task_type: coding
+instruction: "The file graph.txt contains an undirected graph as an edge list, two vertex names per line. Print the length of the shortest path from START to GOAL (number of edges). Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
+reward: 1
+expected: "4"
+check: exact_int

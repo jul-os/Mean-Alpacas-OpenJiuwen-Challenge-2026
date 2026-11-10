@@ -1,0 +1,6 @@
+task_id: coding_0026
+task_type: coding
+instruction: "The file phrase.txt contains one line of text. Print that line encrypted with a Caesar cipher with shift 3 (letters only, case preserved, other characters unchanged). Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
+reward: 2
+expected: Dwwdfn Dw Gdzq Eb Ulyhu
+check: exact_str

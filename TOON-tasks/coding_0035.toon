@@ -1,0 +1,6 @@
+task_id: coding_0035
+task_type: coding
+instruction: "The file coins.txt contains coin denominations, one per line. Using these denominations, print the minimal number of coins needed to make exactly 63 (each denomination is unlimited). Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
+reward: 5
+expected: "9"
+check: exact_int

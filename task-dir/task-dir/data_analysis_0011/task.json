@@ -1,0 +1,8 @@
+{
+  "task_id": "data_analysis_0011",
+  "task_type": "data_analysis",
+  "instruction": "The file employees.csv has columns emp_id,name,department,city,hired_year,salary (20 rows). How many employees were hired after 2018? Use bash with python3 to compute it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
+  "reward": 4,
+  "expected": "11",
+  "check": "exact_int"
+}

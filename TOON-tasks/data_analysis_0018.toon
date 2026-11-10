@@ -1,0 +1,6 @@
+task_id: data_analysis_0018
+task_type: data_analysis
+instruction: "The files customers.csv (6 rows) and orders2.csv (20 rows) are in the current directory: customers.csv has columns customer_id,city,segment; orders2.csv has columns order_id,customer_id,amount,month. How many orders were placed by the customers from Berlin? Use bash with python3 to compute it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
+reward: 2
+expected: "7"
+check: exact_int

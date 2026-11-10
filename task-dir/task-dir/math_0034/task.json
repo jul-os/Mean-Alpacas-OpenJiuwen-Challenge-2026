@@ -1,0 +1,8 @@
+{
+  "task_id": "math_0034",
+  "task_type": "math",
+  "instruction": "A factory makes two products. Product X gives 50 euro profit per item, product Y gives 40 euro. Per day at most 20 items total can be made, and product X needs 2 hours of machine time per item while product Y needs 1 hour, with 30 machine hours available per day. What is the maximal daily profit in euro with integer numbers of items? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
+  "reward": 5,
+  "expected": "900",
+  "check": "exact_int"
+}

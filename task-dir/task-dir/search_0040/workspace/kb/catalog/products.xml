@@ -1,0 +1,5 @@
+<catalog>
+  <product sku="N-100"><name>Northwind Gateway</name><price>120.0</price><made_in>Switzerland</made_in></product>
+  <product sku="S-330"><name>Sensora Probe</name><price>89.5</price><made_in>Estonia</made_in></product>
+  <product sku="V-500"><name>Vela Pallet Tracker</name><price>56.0</price><made_in>Netherlands</made_in></product>
+</catalog>

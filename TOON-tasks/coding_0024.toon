@@ -1,0 +1,6 @@
+task_id: coding_0024
+task_type: coding
+instruction: "The file text.txt contains 5 lines. Print each of the 5 lines reversed (characters in reverse order), one per line. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
+reward: 5
+expected: "dlrow olleh\negnellahC newuiJnepO\n321 cba\nsacaplA naeM\nereh enil tsal"
+check: exact_str

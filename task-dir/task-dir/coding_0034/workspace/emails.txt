@@ -1,0 +1,2 @@
+Contact bob@example.com or alice@work.example for details. Also see bob@example.com in the archive and ops@work.example.
+Invalid: user@, @nodomain, plain text. Second line mentions carol@home.example.

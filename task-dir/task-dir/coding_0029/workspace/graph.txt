@@ -1,0 +1,12 @@
+START A
+A B
+A C
+B D
+C D
+C E
+D GOAL
+E GOAL
+B F
+F GOAL
+E H
+H GOAL

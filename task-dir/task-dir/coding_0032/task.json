@@ -1,0 +1,8 @@
+{
+  "task_id": "coding_0032",
+  "task_type": "coding",
+  "instruction": "The file data.json contains a JSON object with a list of payments (fields: id, amount, currency). Print the total amount of all payments in EUR. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory.",
+  "reward": 4,
+  "expected": "180",
+  "check": "exact_int"
+}

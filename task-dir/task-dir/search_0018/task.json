@@ -1,0 +1,8 @@
+{
+  "task_id": "search_0018",
+  "task_type": "search",
+  "instruction": "The directory kb/ contains a small knowledge base: files of different kinds (markdown, csv, json, log, plain text) in several subdirectories, and some files are hidden. What is the maximum temperature (max_temp_c) recorded by device S-331? Use the file tools or bash (ls, grep, cat, awk, python3) to find it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
+  "reward": 5,
+  "expected": "55.8",
+  "check": "exact_str"
+}

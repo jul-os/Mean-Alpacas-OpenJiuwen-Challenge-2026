@@ -1,0 +1,6 @@
+task_id: math_0011
+task_type: math
+instruction: "Alice is 3 times as old as Bob. In 8 years Alice will be twice as old as Bob. How old is Bob now? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
+reward: 2
+expected: "8"
+check: exact_int
