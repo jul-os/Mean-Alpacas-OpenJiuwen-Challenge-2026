@@ -1,0 +1,8 @@
+{
+  "task_id": "coding_extra_0007",
+  "task_type": "coding",
+  "instruction": "Fix the project so both test files pass. Do not edit tests. Work only inside the current directory and write DONE to answer.txt when finished. Work only inside the current directory. When you are done, write ONLY the word DONE to answer.txt in the current directory.",
+  "reward": 3,
+  "expected": "tests_pass",
+  "check": "unittest"
+}
