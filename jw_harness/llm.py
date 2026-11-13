@@ -70,6 +70,7 @@ class LLM:
         self.spend = Spend()
         self.sem = asyncio.Semaphore(concurrency)
         self.dead = False  # proxy stopped answering (budget is over on the server side)
+        self.reserved = 0.0  # worst-case cost of calls in flight (parallel workers)
 
     def remaining(self) -> float | None:
         return None if self.budget is None else self.budget - self.spend.units
@@ -79,11 +80,21 @@ class LLM:
         """Return (content, cost_units). `user` may be a full message list."""
         if self.dead:
             raise BudgetExhausted("proxy is not answering")
-        rem = self.remaining()
-        if rem is not None and rem < max_tokens * 0.2:
-            raise BudgetExhausted(f"remaining {rem:.0f}")
         msgs = [{"role": "system", "content": system}]
         msgs += user if isinstance(user, list) else [{"role": "user", "content": user}]
+        # worst case of this call: ~3 chars per input token, the full max_tokens of output.
+        # Reserved before the call so parallel workers cannot overshoot the budget together.
+        worst = sum(len(str(m["content"])) for m in msgs) / 3 / 10 + max_tokens
+        rem = self.remaining()
+        if rem is not None and rem - self.reserved < worst:
+            raise BudgetExhausted(f"remaining {rem:.0f}, in flight {self.reserved:.0f}, call needs {worst:.0f}")
+        self.reserved += worst
+        try:
+            return await self._ask(msgs, model, max_tokens, temperature)
+        finally:
+            self.reserved -= worst
+
+    async def _ask(self, msgs: list, model: str, max_tokens: int, temperature: float) -> tuple[str, float]:
         last = None
         for attempt in range(5):
             async with self.sem:

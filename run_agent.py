@@ -27,14 +27,29 @@ from jw_harness import solvers
 from jw_harness.llm import BudgetExhausted, ProxyUnavailable, from_env
 
 # Measured mean cost per task in budget units (bench/runs, qwen3.6-35b-a3b-noreason).
-EST = {"math": 70, "coding_per_failure": 35, "coding_base": 20,
-       "coding_synthesis_program": 100,
-       "coding_project": 500, "data": 40, "search_kb": 25,
-       "data_analysis": 250, "search": 300, "other": 1500}
+EST = {"math": 70, "program": 120, "coding_per_failure": 35, "coding_base": 20,
+       "data": 40, "search_kb": 25, "data_analysis": 250, "search": 300, "other": 1500}
 TIME_LIMIT_S = float(os.environ.get("TIME_LIMIT_S", 52 * 60))  # the container is killed at 60 min
 # Competition budget in output tokens (input/10 + output). The proxy is the source of truth;
 # we stop a bit earlier so that the last tasks are not cut off mid-way.
-BUDGET = float(os.environ.get("TOKEN_BUDGET", 100_000))
+def read_budget(default: float = 100_000) -> float:
+    """The checker passes the budget in $BUDGET (output tokens); it may differ from 100k.
+    Accepts "250000", "250_000", "250 000", "2.5e5", "250k"; TOKEN_BUDGET is the old local name."""
+    for name in ("BUDGET", "TOKEN_BUDGET"):
+        raw = os.environ.get(name, "").strip().lower().replace("_", "").replace(" ", "").replace(",", "")
+        if not raw:
+            continue
+        mult = 1000 if raw.endswith("k") else 1_000_000 if raw.endswith("m") else 1
+        try:
+            v = float(raw.rstrip("km")) * mult
+        except ValueError:
+            continue
+        if v > 0:
+            return v
+    return default
+
+
+BUDGET = read_budget()
 RESERVE = 0.05          # never plan on the last 5%
 ENDGAME = 0.10          # below 10% left: one task at a time, fewer half-paid unfinished tasks
 VERIFY_MIN_LEFT = 0.30  # cross-checks only while more than 30% of the budget is left
@@ -84,48 +99,26 @@ def workspace_text(ws: Path, limit: int = 3_000_000) -> str:
 
 
 def recon(t: dict) -> None:
-    """Fill routing, cost and feasibility metadata without any LLM call."""
+    """Fill t['_kind'], t['_est'], t['_suspect'] without any LLM call."""
     d = Path(t["_dir"])
     ws = d / "workspace"
     ttype = t.get("task_type", "")
     instr = t.get("instruction", "")
     t["_suspect"] = ""
     t["_impossible"] = ""
-    if ttype == "coding":
-        profile = solvers.coding_profile(t, ws)
-        policy = solvers.coding_policy(t, ws, profile)
+    tgt = solvers.coding_target(t, ws) if ws.is_dir() else None
+    if tgt:
         t["_kind"] = "coding"
-        t["_route"] = policy["route"]
-        t["_base_class"] = profile["base_class"]
-        t["_repair_kind"] = profile["repair_kind"]
-        t["_profile"] = {k: v for k, v in profile.items() if k != "test_target"}
-        tgt = profile["test_target"]
-        if t["_route"] in ("TEST_REPAIR", "SYNTAX_REPAIR", "TIMEOUT_REPAIR") and tgt:
-            report = solvers.run_tests(ws, tgt[0])
-            n = solvers.failure_count(report)
-            t["_failures"] = n
-            t["_impossible"] = solvers.contradictory_tests(ws, tgt[0])
-            if report == "TIMEOUT":
-                t["_route"] = "TIMEOUT_REPAIR"
-            elif re.search(r"\b(?:SyntaxError|IndentationError|TabError)\b", report):
-                t["_route"] = "SYNTAX_REPAIR"
-            # TIMEOUT is a distinct failure state, not a million independent
-            # test failures for budget planning.
-            estimate_failures = 1 if report == "TIMEOUT" else min(n, 20)
-            t["_est"] = EST["coding_base"] + EST["coding_per_failure"] * max(estimate_failures, 1)
-            if not report:
-                t["_est"] = 0  # tests already pass
-            return
-        if t["_route"] == "PROGRAM_SYNTHESIS":
-            t["_synthesis_mode"] = "program"
-            t["_est"] = EST["coding_synthesis_program"]
-            return
-        if t["_route"] == "PROJECT_REPAIR":
-            t["_est"] = EST["coding_project"]
-            return
-        # An unrecognized coding shape goes through the generic agent, but it
-        # remains a coding task in the plan and in the saved trajectory.
-        t["_est"] = EST["other"]
+        report = solvers.run_tests(ws, tgt[0])
+        n = len(re.findall(r"^(FAIL|ERROR):", report, flags=re.M)) or (1 if report else 0)
+        t["_failures"] = n
+        t["_impossible"] = solvers.contradictory_tests(ws, tgt[0])
+        t["_est"] = EST["coding_base"] + EST["coding_per_failure"] * max(n, 1)
+        if not report:
+            t["_est"] = 0  # tests already pass
+        return
+    if ttype in ("coding", "") and not tgt and solvers.is_program_task(t):
+        t["_kind"], t["_est"] = "program", EST["program"]
         return
     if ttype == "math" and not ws.is_dir():
         t["_kind"], t["_est"] = "math", EST["math"]
@@ -136,6 +129,8 @@ def recon(t: dict) -> None:
     if kb is not None:
         t["_kind"], t["_est"] = "search", EST["search_kb"]
         q = solvers.search_question(instr)
+        if not kb.mentioned(q):
+            t["_est"] = EST["search"]  # no entity in the graph: the solver hands it to the agent
         raw = workspace_text(ws).lower()
         unknown = [n for n in kb.unknown_names(q) if n.lower() not in raw]
         if not kb.mentioned(q) and unknown:
@@ -203,22 +198,15 @@ async def solve_one(llm, t: dict, sols: Solutions, traj_dir: Path, deadline: flo
     res = None
     try:
         if t["_kind"] == "coding":
-            route = t.get("_route", "GENERIC_AGENT")
-            if route == "PROGRAM_SYNTHESIS":
-                res = await solvers.solve_synthesis(llm, d, t, trace)
-            elif route in ("TEST_REPAIR", "SYNTAX_REPAIR", "TIMEOUT_REPAIR", "PROJECT_REPAIR"):
-                res = await solvers.solve_coding(llm, d, t, trace)
-            else:
-                res = None
+            res = await solvers.solve_coding(llm, d, t, trace)
+        elif t["_kind"] == "program":
+            res = await solvers.solve_program(llm, d, t, trace)
         elif t["_kind"] == "math":
             res = await solvers.solve_math(llm, d, t, trace)
         elif t["_kind"] == "data":
             res = await solvers.solve_data(llm, d, t, trace)
         elif t["_kind"] == "search":
             res = await solvers.solve_search(llm, d, t, trace)
-        # Keep the original harness policy: a specialized solver may fall back
-        # only by returning None.  A failed Result is terminal for this task;
-        # silently starting a second expensive agent would defeat budgeting.
         if res is None:
             if t["_suspect"]:  # likely infeasible: a short, cheap look only
                 res = await solvers.solve_agent(llm, d, t, trace, max_steps=3, cost_cap=300)
@@ -235,10 +223,7 @@ async def solve_one(llm, t: dict, sols: Solutions, traj_dir: Path, deadline: flo
         trace.append({"traceback": traceback.format_exc()[-2000:]})
     spent = sum(x.get("cost", 0) for x in trace if isinstance(x, dict))
     entry = {"task_id": tid, "answer": res.answer, "submitted": res.ok, "reward": t["_reward"],
-             "kind": t["_kind"], "route": t.get("_route", ""),
-             "base_class": t.get("_base_class", ""), "repair_kind": t.get("_repair_kind", ""),
-             "synthesis_mode": t.get("_synthesis_mode", ""), "est": t["_est"],
-             "spent": round(spent, 1), "verified": t.get("_verify", False),
+             "kind": t["_kind"], "est": t["_est"], "spent": round(spent, 1), "verified": t.get("_verify", False),
              "seconds": round(time.monotonic() - t0, 1), "note": res.note}
     if res.ok:
         await sols.record(tid, entry)
@@ -246,8 +231,8 @@ async def solve_one(llm, t: dict, sols: Solutions, traj_dir: Path, deadline: flo
         (traj_dir / f"{tid}.json").write_text(json.dumps({**entry, "trace": trace}, ensure_ascii=False, indent=1))
     except OSError:
         pass
-    log(f"{tid:24} {t['_kind']:6} {t.get('_route', ''):18} {'OK ' if res.ok else '-- '} "
-        f"spent={spent:7.1f} est={t['_est']:5} total={llm.spend.units:9.1f} {res.note}")
+    log(f"{tid:24} {t['_kind']:6} {'OK ' if res.ok else '-- '} spent={spent:7.1f} est={t['_est']:5} "
+        f"total={llm.spend.units:9.1f} {res.note}")
 
 
 async def main_async(a) -> int:
@@ -267,8 +252,7 @@ async def main_async(a) -> int:
         t["_verify"] = bool(rewards) and t["_reward"] >= verify_from and t["_reward"] > rewards[0]
     order = sorted(tasks, key=lambda t: (bool(t["_suspect"]), -t["_prio"]))
     for t in order:
-        log(f"plan {t['task_id']:24} kind={t['_kind']:6} route={t.get('_route', ''):18} "
-            f"reward={t['_reward']:<4} est={t['_est']:<5}"
+        log(f"plan {t['task_id']:24} kind={t['_kind']:6} reward={t['_reward']:<4} est={t['_est']:<5}"
             f" {('SUSPECT: ' + t['_suspect']) if t['_suspect'] else ''}")
 
     sols = solutions_path(a.out, tasks_dir)
@@ -283,18 +267,11 @@ async def main_async(a) -> int:
         if t["_kind"] == "coding" and t["_est"] == 0:
             solvers.write_answer(Path(t["_dir"]), "DONE")
             await solutions.record(t["task_id"], {"task_id": t["task_id"], "answer": "DONE", "submitted": True,
-                                                  "kind": "coding", "route": t.get("_route", ""),
-                                                  "base_class": t.get("_base_class", ""),
-                                                  "spent": 0})
+                                                  "kind": "coding", "spent": 0})
     queue = [t for t in order if not (t["_kind"] == "coding" and t["_est"] == 0)]
     for t in queue:
         if t["_impossible"]:
             log(f"skip {t['task_id']}: {t['_impossible']}")
-            # The competition format requires answer.txt in every task
-            # directory.  This marker is not submitted as a solved answer and
-            # costs no LLM tokens; it only records the free infeasibility
-            # decision for the evaluator and for interrupted local runs.
-            solvers.write_answer(Path(t["_dir"]), "IMPOSSIBLE")
     queue = [t for t in queue if not t["_impossible"]]
     if a.skip_suspect:
         queue = [t for t in queue if not t["_suspect"]]
