@@ -1,0 +1,8 @@
+{
+  "task_id": "infeasible_data_0001",
+  "task_type": "data_analysis",
+  "instruction": "The file sales.csv has columns product,units (3 rows). How many units of product 'unobtainium' were sold? Write ONLY the final answer to answer.txt.",
+  "reward": 5,
+  "expected": "IMPOSSIBLE",
+  "check": "exact_int"
+}

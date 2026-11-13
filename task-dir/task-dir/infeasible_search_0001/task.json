@@ -1,0 +1,8 @@
+{
+  "task_id": "infeasible_search_0001",
+  "task_type": "search",
+  "instruction": "The directory kb/ contains a small knowledge base of markdown files. In which year was Zoya Unknown born? Write ONLY the final answer to answer.txt.",
+  "reward": 5,
+  "expected": "IMPOSSIBLE",
+  "check": "exact_str"
+}
