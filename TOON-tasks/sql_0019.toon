@@ -1,6 +1,0 @@
-task_id: sql_0019
-task_type: sql
-instruction: "The SQLite database 'Database for tasks.sqlite3' in the current directory has tables: CATEGORY(WARE, CLASS) - which category (CLASS) a ware belongs to (a ware may belong to several categories); MANUFACTURER(BILL_ID, COMPANY) - bills of materials and the companies owning them; MATERIAL(BILL_ID, WARE, AMOUNT) - materials used by a bill; PRODUCT(BILL_ID, WARE, AMOUNT, PRICE) - wares produced by a bill, with amount and price. A bill may produce several wares. Get all the unique wares in the alphabetic order with the minimal and maximal prices for each. Write one row per line as ware;min;max, both prices rounded to one decimal point. Compute the answer with bash (sqlite3 and/or python3). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 4
-expected: "Charcoal;5.0;9.9\nCrude oil;14.1;25.8\nDrinking water;3.0;4.9\nGold;1000.3;1299.7\nGold ore;5.4;14.8\nGrain;4.0;7.9\nLeather;20.1;29.9\nMeat;4.0;14.9\nMeat cow;100.0;149.5\nPaper;4.0;6.9\nSalt;2.0;3.9\nSteak;30.0;44.9\nWater;1.0;1.9\nWood;5.0;14.9"
-check: exact_str

@@ -1,6 +1,0 @@
-task_id: math_0042
-task_type: math
-instruction: "Find the maximum value of the function f(x) = x * e^{-x} for x >= 0. Write the answer as a decimal rounded to two decimal places (always exactly two digits after the point). Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 1
-expected: "0.37"
-check: exact_str

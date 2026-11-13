@@ -1,8 +1,0 @@
-{
-  "task_id": "sql_0036",
-  "task_type": "sql",
-  "instruction": "The SQLite database 'Database for tasks.sqlite3' in the current directory has tables: CATEGORY(WARE, CLASS) - which category (CLASS) a ware belongs to (a ware may belong to several categories); MANUFACTURER(BILL_ID, COMPANY) - bills of materials and the companies owning them; MATERIAL(BILL_ID, WARE, AMOUNT) - materials used by a bill; PRODUCT(BILL_ID, WARE, AMOUNT, PRICE) - wares produced by a bill, with amount and price. A bill may produce several wares. Show all the companies with the largest number of different wares they produce and their lists of wares in alphabetical order. Write one row per line as company;wares, where wares is a comma-separated list (no spaces). Sort rows by company name. Compute the answer with bash (sqlite3 and/or python3). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 1,
-  "expected": "Juniper Networks;Charcoal,Crude oil,Drinking water,Leather,Meat,Paper,Steak\nRediff.com India Limited;Charcoal,Drinking water,Gold,Grain,Leather,Meat,Wood\nSimon Property Group;Charcoal,Drinking water,Leather,Meat,Meat cow,Water,Wood",
-  "check": "exact_str"
-}

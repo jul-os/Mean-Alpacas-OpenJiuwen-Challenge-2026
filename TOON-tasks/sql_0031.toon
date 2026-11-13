@@ -1,6 +1,0 @@
-task_id: sql_0031
-task_type: sql
-instruction: "The SQLite database 'Database for tasks.sqlite3' in the current directory has tables: CATEGORY(WARE, CLASS) - which category (CLASS) a ware belongs to (a ware may belong to several categories); MANUFACTURER(BILL_ID, COMPANY) - bills of materials and the companies owning them; MATERIAL(BILL_ID, WARE, AMOUNT) - materials used by a bill; PRODUCT(BILL_ID, WARE, AMOUNT, PRICE) - wares produced by a bill, with amount and price. A bill may produce several wares. Show the most expensive ware in each category and its price. The most expensive ware is the ware with the maximal price among all product records of the wares in the category; if several wares tie, take the alphabetically first one. Write one row per line as category;ware;price, the price rounded to one decimal point, sorted by category name. Compute the answer with bash (sqlite3 and/or python3). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 1
-expected: "Chemicals;Crude oil;25.8\nFood;Steak;44.9\nFuel;Crude oil;25.8\nLivestock;Meat cow;149.5\nMineral;Gold ore;14.8\nRaw food;Meat;14.9\nRaw material;Wood;14.9\nReady food;Steak;44.9\nStuff;Gold;1299.7"
-check: exact_str

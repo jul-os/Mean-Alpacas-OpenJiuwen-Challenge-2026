@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_extra_0003",
-  "task_type": "coding",
-  "instruction": "Run `python3 test_main.py`; the top-level program has a bug. Fix main.py without editing the tests until all tests pass. Work only inside the current directory. When you are done, write ONLY the word DONE to answer.txt in the current directory.",
-  "reward": 5,
-  "expected": "tests_pass",
-  "check": "unittest"
-}

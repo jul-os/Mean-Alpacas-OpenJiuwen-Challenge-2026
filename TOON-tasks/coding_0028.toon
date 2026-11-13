@@ -1,6 +1,0 @@
-task_id: coding_0028
-task_type: coding
-instruction: "The file words.txt contains 20 words, one per line. Print the number of words that are palindromes (read the same forwards and backwards, case-insensitive). Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
-reward: 2
-expected: "9"
-check: exact_int

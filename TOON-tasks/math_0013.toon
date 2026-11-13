@@ -1,6 +1,0 @@
-task_id: math_0013
-task_type: math
-instruction: "A cinema sells 250 tickets at 8 euro each. Six tickets are refunded in full. The expenses of the screening are 1200 euro. How much money in euro does the cinema keep? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 5
-expected: "752"
-check: exact_int

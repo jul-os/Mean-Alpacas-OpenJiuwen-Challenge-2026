@@ -1,8 +1,0 @@
-{
-  "task_id": "data_analysis_0016",
-  "task_type": "data_analysis",
-  "instruction": "The file sensors.csv has columns ts,device,temperature,status (30 rows). Which device has the highest average temperature? Write the device id. Use bash with python3 to compute it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 5,
-  "expected": "S3",
-  "check": "exact_str"
-}

@@ -1,6 +1,0 @@
-task_id: coding_0037
-task_type: coding
-instruction: "The file two_strings.txt contains exactly two lines of lowercase letters. Print the longest common substring of the two lines; if several substrings have the maximal length, print the alphabetically first one. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
-reward: 1
-expected: anana
-check: exact_str

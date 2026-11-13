@@ -1,6 +1,0 @@
-task_id: math_0018
-task_type: math
-instruction: "Two cars drive towards each other from towns 300 km apart, at 60 km/h and 40 km/h. How many hours pass until they meet? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 4
-expected: "3"
-check: exact_int

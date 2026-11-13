@@ -1,6 +1,0 @@
-task_id: coding_0033
-task_type: coding
-instruction: "The file matrix.txt contains a 4x4 matrix of integers, rows separated by spaces. Print the matrix rotated 90 degrees clockwise: 4 rows, values separated by single spaces. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
-reward: 2
-expected: "13 9 5 1\n14 10 6 2\n15 11 7 3\n16 12 8 4"
-check: exact_str

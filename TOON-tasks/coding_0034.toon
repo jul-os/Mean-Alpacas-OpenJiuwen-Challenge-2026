@@ -1,6 +1,0 @@
-task_id: coding_0034
-task_type: coding
-instruction: "The file emails.txt contains free text with email addresses. Extract all email addresses matching the pattern word@word.word (letters only in each part), remove duplicates, sort alphabetically and print one per line. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory."
-reward: 1
-expected: "alice@work.example\nbob@example.com\ncarol@home.example\nops@work.example"
-check: exact_str

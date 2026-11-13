@@ -1,8 +1,0 @@
-{
-  "task_id": "search_0011",
-  "task_type": "search",
-  "instruction": "The directory kb/ contains a small knowledge base: files of different kinds (markdown, csv, json, log, plain text) in several subdirectories, and some files are hidden. What is the price of the product with sku S-330? Use the file tools or bash (ls, grep, cat, awk, python3) to find it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 3,
-  "expected": "89.5",
-  "check": "exact_str"
-}

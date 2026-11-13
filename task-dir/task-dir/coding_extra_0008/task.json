@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_extra_0008",
-  "task_type": "coding",
-  "instruction": "The file phrase_extra.txt contains one line. Print that line reversed character by character. Write a program, run it, and write ONLY its output to answer.txt.",
-  "reward": 3,
-  "expected": "tseT revoC",
-  "check": "exact_str"
-}

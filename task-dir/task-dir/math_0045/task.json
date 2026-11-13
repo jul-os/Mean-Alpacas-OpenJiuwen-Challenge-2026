@@ -1,8 +1,0 @@
-{
-  "task_id": "math_0045",
-  "task_type": "math",
-  "instruction": "What is the slope of the tangent line to the curve y = sqrt(x) at x = 9? Write the answer as an irreducible fraction a/b. Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 3,
-  "expected": "1/6",
-  "check": "exact_str"
-}

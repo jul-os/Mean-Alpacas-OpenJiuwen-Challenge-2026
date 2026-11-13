@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_0031",
-  "task_type": "coding",
-  "instruction": "The file story.txt contains one line of words. Print all words sorted case-insensitively (ties keep input order), joined by single spaces. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory.",
-  "reward": 5,
-  "expected": "and Brown brown dog fox Fox jumps Lazy over quick rests The the the",
-  "check": "exact_str"
-}

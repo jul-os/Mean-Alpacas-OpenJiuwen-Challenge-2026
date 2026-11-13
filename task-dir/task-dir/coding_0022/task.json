@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_0022",
-  "task_type": "coding",
-  "instruction": "The file numbers.txt contains 20 integers, one per line. Print their sum. Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory.",
-  "reward": 5,
-  "expected": "411",
-  "check": "exact_int"
-}

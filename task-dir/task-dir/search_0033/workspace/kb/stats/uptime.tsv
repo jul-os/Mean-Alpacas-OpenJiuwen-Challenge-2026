@@ -1,7 +1,0 @@
-service	month	uptime_percent
-firmware-update	2026-01	99.95
-firmware-update	2026-02	99.80
-telemetry	2026-01	99.99
-telemetry	2026-02	99.61
-fleet-sync	2026-01	99.50
-fleet-sync	2026-02	99.70

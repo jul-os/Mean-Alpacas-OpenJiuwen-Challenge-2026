@@ -1,8 +1,0 @@
-{
-  "task_id": "math_0010",
-  "task_type": "math",
-  "instruction": "A shop sells 120 kg of apples at 3 euro per kg and 80 kg of pears at 4 euro per kg. It then pays 500 euro for rent. How much money in euro does it have left after paying rent? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 2,
-  "expected": "180",
-  "check": "exact_int"
-}

@@ -1,8 +1,0 @@
-{
-  "task_id": "sql_0020",
-  "task_type": "sql",
-  "instruction": "The SQLite database 'Database for tasks.sqlite3' in the current directory has tables: CATEGORY(WARE, CLASS) - which category (CLASS) a ware belongs to (a ware may belong to several categories); MANUFACTURER(BILL_ID, COMPANY) - bills of materials and the companies owning them; MATERIAL(BILL_ID, WARE, AMOUNT) - materials used by a bill; PRODUCT(BILL_ID, WARE, AMOUNT, PRICE) - wares produced by a bill, with amount and price. A bill may produce several wares. Show top 3 wares with the most difference between minimal and maximal prices. Write exactly 3 rows as ware;diff, where diff is (max price - min price) rounded to one decimal point. Sort by diff descending; ties broken by ware name in alphabetical order. Compute the answer with bash (sqlite3 and/or python3). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt).",
-  "reward": 4,
-  "expected": "Gold;299.4\nMeat cow;49.5\nSteak;14.9",
-  "check": "exact_str"
-}

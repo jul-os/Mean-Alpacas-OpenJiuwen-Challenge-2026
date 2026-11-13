@@ -1,6 +1,0 @@
-task_id: math_0014
-task_type: math
-instruction: "A train travels 240 km at 80 km/h and then 90 km at 60 km/h. What is the total travel time in minutes? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 3
-expected: "270"
-check: exact_int

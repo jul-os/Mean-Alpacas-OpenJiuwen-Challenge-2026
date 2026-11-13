@@ -1,6 +1,0 @@
-task_id: data_analysis_0015
-task_type: data_analysis
-instruction: "The file sensors.csv has columns ts,device,temperature,status (30 rows). How many readings with status 'error' were recorded by device S1? Use bash with python3 to compute it. Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 1
-expected: "3"
-check: exact_int

@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_extra_0005",
-  "task_type": "coding",
-  "instruction": "Run `python3 test_timeout.py`; fix slow.py so the tests finish quickly and pass. Do not edit the tests. Work only inside the current directory. When you are done, write ONLY the word DONE to answer.txt in the current directory.",
-  "reward": 4,
-  "expected": "tests_pass",
-  "check": "unittest"
-}

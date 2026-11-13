@@ -1,8 +1,0 @@
-{
-  "task_id": "coding_0036",
-  "task_type": "coding",
-  "instruction": "The file rle.txt contains one line of lowercase letters. Print its run-length encoding: for each run of the same letter, the letter followed by the run length (e.g. aaabcc -> a3b1c2). Write a program in any language (python3, bash, awk, etc.) that computes it. Run the program and write ONLY its output to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt). Work only inside the current directory.",
-  "reward": 4,
-  "expected": "a3b1c4d2e2a3b3",
-  "check": "exact_str"
-}

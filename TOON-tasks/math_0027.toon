@@ -1,6 +1,0 @@
-task_id: math_0027
-task_type: math
-instruction: "What is the sum of the decimal digits of 2^20? Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 2
-expected: "31"
-check: exact_int

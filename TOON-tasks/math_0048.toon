@@ -1,6 +1,0 @@
-task_id: math_0048
-task_type: math
-instruction: "Compute the limit of (3x^2 + 2x) / (5x^2 - 1) as x approaches infinity. Write the answer as an irreducible fraction a/b. Compute it with the bash tool (python3 -c). Work only inside the current directory. When you are done, write ONLY the final answer to the file answer.txt in the current directory (for example with bash: echo 42 > answer.txt)."
-reward: 2
-expected: 3/5
-check: exact_str
