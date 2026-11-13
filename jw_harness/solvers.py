@@ -12,22 +12,20 @@ import re
 import subprocess
 import textwrap
 import sys
-import tempfile
-import os
-import threading
 from pathlib import Path
 
 from .llm import CHEAP, LLM, SECOND
+from . import pyrun
 from .mathfix import solve_reply
 
 # ---------------------------------------------------------------- prompts
 # Measured on 104 tasks (bench/): see README for the numbers behind each choice.
-SYS_LINE = "Fix the bugs. Output only changed lines as N: code (indent auto). Nothing else."
-SYS_LINE_MULTI = "Fix the bugs. Output only changed lines as file:N: code (indent auto). Nothing else."
+SYS_LINE = ("Fix the bugs. Output only changed lines as N: code (indent auto); "
+            "repeat N to replace a line by several. Nothing else.")
+SYS_LINE_MULTI = ("Fix the bugs. Output only changed lines as file:N: code (indent auto); "
+                  "repeat N to replace a line by several. Nothing else.")
 SYS_FUNC = ("You fix bugs in Python. Reply ONLY with the corrected function definitions "
             "in one ```python block. No prose.")
-SYS_FILE = ("You fix bugs in a Python program. Reply ONLY with the complete corrected "
-            "contents of the file in one ```python block. No prose.")
 SYS_STEPS = (
     "Translate the word problem into Python statements, ONE line per sentence, "
     "updating variable x. Do NOT compute anything yourself. Use // for rounding down, "
@@ -44,14 +42,6 @@ SYS_AGENT = (
     '{"answer": "<final answer>"} when done (for edit tasks answer DONE after checking).\n'
     'If the task cannot be solved from the available data, reply {"answer": "IMPOSSIBLE"}.\n'
     "Prefer one python3 -c / grep command that computes the answer directly. No network, no installs."
-)
-
-SYS_PROGRAM = (
-    "Solve the coding task by writing a Python program. Return ONLY the complete Python "
-    "source code. The wrapper will save and run it in the task directory and will put "
-    "stdout into answer.txt. Do not write answer.txt yourself. Do not use network or "
-    "install packages. Read the supplied files at runtime and derive the answer; "
-    "do not hardcode the final answer when input data exists."
 )
 
 
@@ -115,116 +105,36 @@ TEST_FILE = re.compile(r"(^|/)(test_[^/]*|[^/]*_test)\.py$")
 
 
 def coding_target(task: dict, ws: Path) -> tuple[str, list[str]] | None:
-    """Return (test file, source files) for a conventional repair task.
+    """(test command, source files to fix) parsed from the instruction, or None if not this task shape.
 
-    "Fix the bugs in mylib.py" names the file; otherwise every non-test .py file in the
-    workspace is a candidate (packages like shop/cart.py + shop/pricing.py).  If
-    the instruction does not name the test explicitly, exactly one conventional
-    test file is accepted as an unambiguous target.
+    The test command is the argument list after `python3`: "test_x.py" or "-m unittest test_x"
+    (both forms are run exactly as the instruction says: a test file without unittest.main()
+    passes silently when run as a script). "Fix the bugs in mylib.py" / "Repair tags.py" names
+    the file; otherwise every non-test .py file is a candidate (packages like shop/cart.py).
     """
     instr = task.get("instruction", "")
-    m = re.search(r"python3?\s+([\w./-]+\.py)", instr)
-    if m and (ws / m.group(1)).is_file():
-        test = m.group(1)
+    m = re.search(r"python3?\s+-m\s+unittest\s+([\w.]+)", instr)
+    if m:
+        test = f"-m unittest {m.group(1)}"
     else:
-        tests = coding_test_files(ws)
-        if len(tests) != 1:
-            return None
-        test = tests[0]
-    m = re.search(r"bugs in\s+([\w./-]+\.py)", instr)
-    if m and (ws / m.group(1)).is_file():
-        return test, [m.group(1)]
+        m = re.search(r"python3?\s+([\w./-]+\.py)", instr)
+        test = m.group(1) if m else ""
+    if not test or not (ws / test_file(test)).is_file():
+        return None
+    named = [f for f in re.findall(r"\b(?:in|fix|repair|edit|modify|correct|update)\s+`?([\w./-]+\.py)", instr, re.I)
+             if (ws / f).is_file() and not TEST_FILE.search(f)]
+    if named:
+        return test, list(dict.fromkeys(named))
     libs = sorted(str(p.relative_to(ws)) for p in ws.rglob("*.py")
                   if not TEST_FILE.search(str(p.relative_to(ws))) and "__pycache__" not in p.parts)
     return (test, libs) if libs else None
 
 
-def coding_test_files(ws: Path) -> list[str]:
-    """Return test files that can be run directly or discovered by the router."""
-    if not ws.is_dir():
-        return []
-    return sorted(str(p.relative_to(ws)) for p in ws.rglob("*.py")
-                  if TEST_FILE.search(str(p.relative_to(ws))) and "__pycache__" not in p.parts)
-
-
-def coding_source_files(ws: Path) -> list[str]:
-    """Return Python source files, excluding tests and cache files."""
-    if not ws.is_dir():
-        return []
-    return sorted(str(p.relative_to(ws)) for p in ws.rglob("*.py")
-                  if not TEST_FILE.search(str(p.relative_to(ws))) and "__pycache__" not in p.parts)
-
-
-def coding_profile(task: dict, ws: Path) -> dict:
-    """Build a structural coding profile without using an LLM.
-
-    This describes what is present.  It deliberately does not choose a model
-    or a retry policy; that is the job of ``coding_policy`` below.
-    """
-    profile = {
-        "base_class": "unknown",
-        "repair_kind": "",
-        "has_tests": False,
-        "has_source": False,
-        "source_count": 0,
-        "test_count": 0,
-        "has_workspace": ws.is_dir(),
-        "has_input_files": False,
-        "test_target": None,
-    }
-    if task.get("task_type") != "coding":
-        return profile
-    tests = coding_test_files(ws)
-    source = coding_source_files(ws)
-    profile["test_count"] = len(tests)
-    profile["source_count"] = len(source)
-    profile["has_tests"] = bool(tests)
-    profile["has_source"] = bool(source)
-    profile["has_input_files"] = bool(
-        ws.is_dir() and any(
-            p.is_file() and p.name != "answer.txt" and p.suffix.lower() not in (".py", ".pyc")
-            for p in ws.rglob("*")
-        )
-    )
-    target = coding_target(task, ws) if ws.is_dir() else None
-    profile["test_target"] = target
-    if target is not None:
-        profile["base_class"] = "repair"
-        profile["repair_kind"] = "test"
-        return profile
-    instr = task.get("instruction", "").lower()
-    repair_words = re.search(r"\b(fix|repair|debug|bug|implement|complete|correct)\b", instr)
-    synthesis_words = re.search(
-        r"\b(write|create|implement)\s+(?:a\s+)?(?:program|script|solution)|"
-        r"\bcompute\b|\bprint\b|\boutput\b|\banswer\.txt\b", instr)
-    if source and repair_words:
-        profile["base_class"] = "repair"
-        profile["repair_kind"] = "project" if len(tests) != 1 else "test"
-    elif synthesis_words:
-        profile["base_class"] = "synthesis"
-    return profile
-
-
-def coding_policy(task: dict, ws: Path, profile: dict | None = None) -> dict:
-    """Choose a solver route from a previously collected coding profile."""
-    profile = profile or coding_profile(task, ws)
-    if profile["base_class"] == "repair":
-        route = "TEST_REPAIR" if profile["test_target"] else "PROJECT_REPAIR"
-        return {"route": route, "synthesis_mode": "", "fallback": route == "PROJECT_REPAIR"}
-    if profile["base_class"] == "synthesis":
-        mode = synthesis_mode(task, ws)
-        return {"route": "PROGRAM_SYNTHESIS", "synthesis_mode": mode, "fallback": False}
-    return {"route": "GENERIC_AGENT", "synthesis_mode": "", "fallback": False}
-
-
-def coding_route(task: dict, ws: Path) -> str:
-    """Compatibility helper returning only the selected route."""
-    return coding_policy(task, ws)["route"]
-
-
-def synthesis_mode(task: dict, ws: Path) -> str:
-    """Synthesis always returns executable code, never a guessed final value."""
-    return "program"
+def test_file(test: str) -> str:
+    """The test source file of a test command ('-m unittest pkg.test_x' -> 'pkg/test_x.py')."""
+    if test.startswith("-m"):
+        return test.split()[-1].replace(".", "/") + ".py"
+    return test
 
 
 _CONST_NODES = (ast.Expression, ast.Constant, ast.List, ast.Tuple, ast.Set, ast.Dict, ast.BinOp, ast.UnaryOp,
@@ -265,7 +175,7 @@ def _pure_call(node: ast.AST, modules: set[str]) -> bool:
 def contradictory_tests(ws: Path, test: str) -> str:
     """The same pure call is expected to give different values -> no fix can pass all tests."""
     try:
-        tree = ast.parse((ws / test).read_text())
+        tree = ast.parse((ws / test_file(test)).read_text())
     except (SyntaxError, OSError):
         return ""
     modules = set()
@@ -296,20 +206,10 @@ def contradictory_tests(ws: Path, test: str) -> str:
 
 def run_tests(ws: Path, test: str) -> str:
     """'' when the tests pass, otherwise the report."""
-    p = _run([sys.executable, test], ws,
-             timeout=int(os.environ.get("TEST_TIMEOUT_S", "60")))
+    p = _run([sys.executable, *test.split()], ws)
     if p is None:
         return "TIMEOUT"
     return "" if p.returncode == 0 else (p.stdout + p.stderr)
-
-
-def failure_count(report: str) -> int:
-    """Comparable failure score for repair progress and budget estimation."""
-    if not report:
-        return 0
-    if report == "TIMEOUT":
-        return 1_000_000
-    return len(re.findall(r"^(FAIL|ERROR):", report, flags=re.M)) or 1
 
 
 def units(srcs: dict[str, str]) -> list[tuple[str, str, int, int]]:
@@ -327,6 +227,47 @@ def units(srcs: dict[str, str]) -> list[tuple[str, str, int, int]]:
     return out
 
 
+def class_init(us: list, u: tuple) -> tuple | None:
+    """__init__ of the class around method u (attribute errors are usually set up there)."""
+    inits = [o for o in us if o[0] == u[0] and o[1] == "__init__" and o is not u]
+    srcs_before = [o for o in inits if o[2] < u[2]]
+    return max(srcs_before, key=lambda o: o[2]) if srcs_before else None
+
+
+def syntax_window(report: str, srcs: dict[str, str]) -> list[tuple]:
+    """A source that does not compile: the lines around the reported error."""
+    out = []
+    for f, src in srcs.items():
+        try:
+            compile(src, f, "exec")
+        except SyntaxError as e:
+            n = len(src.splitlines())
+            line = min(max(e.lineno or 1, 1), n)
+            out.append((f, "<syntax>", max(1, line - 3), min(n, line + 3)))
+    return out
+
+
+def test_context(block: str, call: str, max_lines: int = 4) -> str:
+    """The test lines just above an assert that compares variables (e.g. the subprocess call)."""
+    for fpath, line in reversed(re.findall(r'File "([^"]+)", line (\d+)', block)):
+        if not TEST_FILE.search(fpath):
+            continue
+        try:
+            ls = Path(fpath).read_text().splitlines()
+        except OSError:
+            return ""
+        i, out = int(line) - 1, []
+        while i > 0 and len(out) < max_lines:
+            i -= 1
+            l = ls[i].strip()
+            if l.startswith(("def ", "class ")):
+                break
+            if l:
+                out.insert(0, l)
+        return "\n".join(out) + ("\n" if out else "")
+    return ""
+
+
 def failing(report: str, srcs: dict[str, str]) -> tuple[list[str], list[tuple[str, str, int, int]]]:
     """Short failure descriptions and the code units to show."""
     us = units(srcs)
@@ -337,11 +278,17 @@ def failing(report: str, srcs: dict[str, str]) -> tuple[list[str], list[tuple[st
             picked.append(u)
 
     descs = []
+    broken = syntax_window(report, srcs)
+    if broken:
+        last = [l.strip() for l in report.strip().splitlines() if l.strip()][-1:]
+        return last, broken
     blocks = re.split(r"^={10,}$", report, flags=re.M)[1:] or [report]
     for block in blocks:
         lines = [l for l in block.strip().splitlines() if l.strip()]
         call = next((l.strip() for l in lines if "self.assert" in l or l.strip().startswith("assert ")), "")
         err = next((l.strip() for l in reversed(lines) if re.match(r"[\w.]*(Error|Exception)\b", l.strip())), "")
+        if call and not re.search(r"\b(?:%s)\(" % "|".join(re.escape(u[1]) for u in us) if us else "$^", call):
+            call = test_context(block, call) + call  # assert on a variable: show where it comes from
         descs.append(f"{call}  -> {err}" if call else err)
         # frames inside the sources: the innermost unit around the reported line
         for fpath, line in re.findall(r'File "([^"]+)", line (\d+)', block):
@@ -354,120 +301,26 @@ def failing(report: str, srcs: dict[str, str]) -> tuple[list[str], list[tuple[st
             for u in us:
                 if u[1] == name:
                     add(u)
-    if not picked and report:  # import error / unknown failure shape: show everything (bounded)
-        picked = us[:12]
-        descs = [d for d in descs if d] or report.strip().splitlines()[-4:]
+    for u in list(picked):
+        init = class_init(us, u) if u[1] != "__init__" else None
+        if init and "self." in "".join(srcs[u[0]].splitlines()[u[2] - 1:u[3]]):
+            add(init)
+    # functions the shown code calls (also across modules): the bug is often one level down
+    for u in list(picked):
+        body = "\n".join(srcs[u[0]].splitlines()[u[2] - 1:u[3]])
+        for name in dict.fromkeys(re.findall(r"\b(\w+)\(", body)):
+            for o in us:
+                if o[1] == name and o is not u and len(picked) < 8:
+                    add(o)
     if not picked and report:
-        # A valid Python program may consist entirely of module-level
-        # statements.  There is no FunctionDef for AST navigation in that
-        # case, so represent each source file as one synthetic module unit.
-        # This keeps the same context-building and line-patch machinery while
-        # allowing the final escalation to replace the whole file.
-        picked = [
-            (f, "__module__", 1, max(1, len(src.splitlines())))
-            for f, src in srcs.items()
-        ][:12]
+        # module-level code (a script without functions): small files are shown whole
+        for f, src in srcs.items():
+            n = len(src.splitlines())
+            if 0 < n <= 80 and not any(u[0] == f for u in us):
+                picked.append((f, "<module>", 1, n))
+        picked += us[:12 - len(picked)]  # import error / unknown failure shape: show everything (bounded)
+        descs = [d for d in descs if d] or report.strip().splitlines()[-4:]
     return [d for d in descs if d][:8], picked
-
-
-def _import_target(src_file: str, module: str, srcs: dict[str, str]) -> str | None:
-    """Resolve a local Python import to one of the task source files."""
-    module = module.lstrip(".")
-    parts = module.split(".") if module else []
-    candidates = []
-    if parts:
-        candidates.extend(["/".join(parts) + ".py", "/".join(parts) + "/__init__.py"])
-    parent = Path(src_file).parent
-    if module:
-        candidates.extend([str(parent / ("/".join(parts) + ".py")),
-                           str(parent / "/".join(parts) / "__init__.py")])
-    for candidate in candidates:
-        candidate = candidate.replace("\\", "/")
-        if candidate in srcs:
-            return candidate
-    return None
-
-
-def dependency_units(srcs: dict[str, str], picked: list, max_depth: int = 2,
-                     limit: int = 16) -> list[tuple[str, str, int, int]]:
-    """Expand selected functions with local functions they call.
-
-    Tracebacks often stop at the public function/assertion even when the bug is
-    in an imported helper.  This small static graph is intentionally local and
-    bounded: it follows Python imports and direct function calls only, without
-    executing code or sending the whole project to the model.
-    """
-    trees: dict[str, ast.AST] = {}
-    defs: dict[tuple[str, str], tuple[str, str, int, int]] = {}
-    imports: dict[str, dict[str, tuple[str, str | None]]] = {}
-    for f, src in srcs.items():
-        try:
-            tree = ast.parse(src)
-        except SyntaxError:
-            continue
-        trees[f] = tree
-        local_imports: dict[str, tuple[str, str | None]] = {}
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                start = node.decorator_list[0].lineno if node.decorator_list else node.lineno
-                defs[(f, node.name)] = (f, node.name, start, node.end_lineno)
-            elif isinstance(node, ast.Import):
-                for alias in node.names:
-                    target = _import_target(f, alias.name, srcs)
-                    if target:
-                        local_imports[alias.asname or alias.name.split(".")[-1]] = (target, None)
-            elif isinstance(node, ast.ImportFrom) and node.module:
-                target = _import_target(f, node.module, srcs)
-                if target:
-                    for alias in node.names:
-                        if alias.name != "*":
-                            local_imports[alias.asname or alias.name] = (target, alias.name)
-        imports[f] = local_imports
-
-    by_name: dict[str, list[tuple[str, str, int, int]]] = {}
-    for unit in defs.values():
-        by_name.setdefault(unit[1], []).append(unit)
-
-    def node_for(unit):
-        f, name, start, end = unit
-        tree = trees.get(f)
-        if tree is None:
-            return None
-        return next((n for n in ast.walk(tree)
-                     if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-                     and n.name == name and n.lineno <= start <= n.end_lineno), None)
-
-    result = list(dict.fromkeys(picked))
-    seen = set(result)
-    frontier = [(u, 0) for u in result if u[1] != "__module__"]
-    while frontier and len(result) < limit:
-        unit, depth = frontier.pop(0)
-        if depth >= max_depth:
-            continue
-        node = node_for(unit)
-        if node is None:
-            continue
-        f = unit[0]
-        targets: list[tuple[str, str]] = []
-        for call in (n for n in ast.walk(node) if isinstance(n, ast.Call)):
-            if isinstance(call.func, ast.Name):
-                alias = imports.get(f, {}).get(call.func.id)
-                if alias and alias[1]:
-                    targets.append((alias[0], alias[1]))
-                else:
-                    targets.extend((u[0], u[1]) for u in by_name.get(call.func.id, []))
-            elif isinstance(call.func, ast.Attribute) and isinstance(call.func.value, ast.Name):
-                alias = imports.get(f, {}).get(call.func.value.id)
-                if alias:
-                    targets.append((alias[0], call.func.attr))
-        for target in targets:
-            candidates = [defs[target]] if target in defs else by_name.get(target[1], [])
-            for candidate in candidates:
-                if candidate not in seen and len(result) < limit:
-                    seen.add(candidate)
-                    result.append(candidate)
-                    frontier.append((candidate, depth + 1))
-    return result
 
 
 def coding_prompt(mode: str, srcs: dict[str, str], descs: list[str], picked: list) -> str:
@@ -490,6 +343,8 @@ def apply_line(srcs: dict[str, str], reply: str, shown: list | None = None) -> d
     files = list(srcs)
     shown_files = list(dict.fromkeys(u[0] for u in (shown or []))) or files
     lines = {f: srcs[f].splitlines() for f in files}
+    extra: dict[tuple, list[str]] = {}  # (file, N) -> lines inserted after N (repeated numbers)
+    first_raw: dict[tuple, str] = {}
     for m in re.finditer(r"^\s*(?:([\w./-]+\.py)\s*:\s*)?(\d+)\s*[:|]\s?(.*)$", reply, flags=re.M):
         f, i, code = m.group(1), int(m.group(2)), m.group(3).strip()
         if f:
@@ -502,6 +357,13 @@ def apply_line(srcs: dict[str, str], reply: str, shown: list | None = None) -> d
         if f is None or not (1 <= i <= len(lines[f])):
             continue
         ls = lines[f]
+        raw = m.group(3)
+        if (f, i) in first_raw:  # repeated number: one more line, indented relative to the first
+            rel = len(raw) - len(raw.lstrip()) - (len(first_raw[(f, i)]) - len(first_raw[(f, i)].lstrip()))
+            ind = ls[i - 1][:len(ls[i - 1]) - len(ls[i - 1].lstrip())]
+            extra.setdefault((f, i), []).append(ind + " " * max(rel, 0) + code)
+            continue
+        first_raw[(f, i)] = raw
         old = ls[i - 1]
         if old.strip():
             # indentation is always taken from the original line: models miscount spaces
@@ -512,6 +374,8 @@ def apply_line(srcs: dict[str, str], reply: str, shown: list | None = None) -> d
             prev = next((l for l in reversed(ls[:i - 1]) if l.strip()), "")
             indent = prev[:len(prev) - len(prev.lstrip())] or "    "
             ls[i - 1] = indent + code + "\n"
+    for (f, i), add_lines in sorted(extra.items(), key=lambda kv: -kv[0][1]):
+        lines[f][i:i] = add_lines
     out = dict(srcs)
     for f in files:
         new = "\n".join(lines[f]) + "\n"
@@ -556,22 +420,17 @@ def apply_func(srcs: dict[str, str], reply: str, shown: list) -> dict[str, str]:
     return out
 
 
-def apply_file(srcs: dict[str, str], reply: str, shown: list) -> dict[str, str]:
-    """Replace a shown module with a complete Python file from the model."""
-    m = re.search(r"```(?:python)?\s*\n(.*?)```", reply, re.S | re.I)
-    code = textwrap.dedent(m.group(1) if m else reply).strip() + "\n"
-    if not code.strip():
-        return srcs
-    try:
-        compile(code, "generated.py", "exec")
-    except SyntaxError:
-        return srcs
-    files = list(dict.fromkeys(u[0] for u in shown))
-    if len(files) != 1:
-        return srcs
-    out = dict(srcs)
-    out[files[0]] = code
-    return out
+def add_missing_imports(ws: Path, report: str, srcs: dict[str, str]) -> bool:
+    """NameError for a standard-library module name -> add `import name` to the file using it."""
+    changed = False
+    for name in set(re.findall(r"NameError: name '(\w+)' is not defined", report)):
+        if name not in sys.stdlib_module_names:
+            continue
+        for f, src in srcs.items():
+            if re.search(rf"\b{name}\.", src) and not re.search(rf"^\s*(import|from)\s+{name}\b", src, re.M):
+                (ws / f).write_text(f"import {name}\n" + src)
+                changed = True
+    return changed
 
 
 async def solve_coding(llm: LLM, task_dir: Path, task: dict, log: list) -> Result | None:
@@ -581,9 +440,7 @@ async def solve_coding(llm: LLM, task_dir: Path, task: dict, log: list) -> Resul
         return None  # not the "fix the code until tests pass" shape: let the agent handle it
     test, libs = tgt
     cost = 0.0
-    # 3 cheap line-edit rounds, then one full-function/module rewrite by the
-    # second model.  A module unit is used for valid top-level scripts that do
-    # not contain any functions.
+    # 3 cheap line-edit rounds, then one full-function rewrite by the second model
     plan = [(CHEAP, "line")] * 3 + [(SECOND, "func")]
     cap = max(4 * task.get("_est", 100), 200)
     prev = None
@@ -594,191 +451,40 @@ async def solve_coding(llm: LLM, task_dir: Path, task: dict, log: list) -> Resul
         if not report:
             break
         srcs = {f: (ws / f).read_text() for f in libs}
+        if add_missing_imports(ws, report, srcs):
+            continue  # a stdlib module used without import: fixed by the wrapper, no tokens
         descs, picked = failing(report, srcs)
+        if mode == "func" and any(u[1] in ("<syntax>", "<module>") for u in picked):
+            mode = "line"  # nothing to rewrite as a function: the file does not parse
         if not picked:
             break
-        expanded = dependency_units(srcs, picked)
-        if len(expanded) > len(picked):
-            log.append({"context": "dependency_expand",
-                        "primary_units": picked,
-                        "dependency_units": expanded[len(picked):]})
-            picked = expanded
-        if prev == descs and mode == "line":
+        if prev == descs and model == CHEAP:
             continue  # no progress with the cheap model: jump to the escalation step
         prev = descs
         prompt = coding_prompt(mode, srcs, descs, picked)
-        is_module = any(u[1] == "__module__" for u in picked)
         system = SYS_LINE if len({u[0] for u in picked}) == 1 else SYS_LINE_MULTI
-        if mode != "line":
-            system = SYS_FILE if is_module else SYS_FUNC
-        reply, c = await llm.ask(system, prompt, model=model,
-                                 max_tokens=300 if mode == "line" else (900 if is_module else 500))
+        reply, c = await llm.ask(system if mode == "line" else SYS_FUNC, prompt, model=model,
+                                 max_tokens=300 if mode == "line" else 500)
         cost += c
         log.append({"model": model, "mode": mode, "prompt": prompt, "reply": reply, "cost": c})
-        if mode == "line":
-            new = apply_line(srcs, reply, picked)
-        elif is_module:
-            new = apply_file(srcs, reply, picked)
-        else:
-            new = apply_func(srcs, reply, picked)
+        new = apply_line(srcs, reply, picked) if mode == "line" else apply_func(srcs, reply, picked)
         for f, txt in new.items():
             if txt != srcs[f]:
                 (ws / f).write_text(txt)
-        changed = [f for f in libs if new.get(f) != srcs.get(f)]
-        if changed:
-            after_report = await asyncio.to_thread(run_tests, ws, test)
-            before_n, after_n = failure_count(report), failure_count(after_report)
-            # A different error with the same count is not evidence of
-            # progress: it can be a regression that merely moved the failure.
-            # Accept only a strictly smaller failure score or a passing suite.
-            improved = after_n < before_n or (after_report == "" and report != "")
-            if after_n > before_n or not improved:
-                # A patch that makes the suite worse, or does not change the
-                # observed failure, is reverted before the next round.  This
-                # keeps speculative line edits from accumulating.
-                for f in changed:
-                    (ws / f).write_text(srcs[f])
-                accepted = False
-            else:
-                accepted = True
-            log.append({"progress": True, "before_failures": before_n,
-                        "after_failures": after_n, "accepted": accepted,
-                        "changed_files": changed})
-        else:
-            log.append({"progress": True, "accepted": False,
-                        "reason": "model produced no applicable change"})
     ok = await asyncio.to_thread(run_tests, ws, test) == ""
     if ok:
         write_answer(task_dir, "DONE")
     return Result(ok, "DONE" if ok else "", cost)
 
 
-# ---------------------------------------------------------------- coding synthesis
-def _strip_program_reply(reply: str) -> str:
-    """Extract Python source while tolerating a single markdown code fence."""
-    m = re.search(r"```(?:python|py)?\s*\n(.*?)```", reply, re.S | re.I)
-    text = m.group(1) if m else reply
-    return text.strip() + "\n"
-
-
-def _capture_pipe(stream, limit: int, box: dict, key: str) -> None:
-    """Drain a child pipe while retaining at most ``limit`` characters."""
-    chunks, total = [], 0
-    while True:
-        chunk = stream.read(8192)
-        if not chunk:
-            break
-        if total < limit:
-            chunks.append(chunk[:limit - total])
-        total += len(chunk)
-    box[key] = ("".join(chunks), total > limit)
-
-
-def _run_generated_program(code: str, cwd: Path) -> tuple[str | None, str]:
-    """Run generated Python locally; return (stdout, error)."""
-    if not code.strip():
-        return None, "empty generated program"
-    try:
-        compile(code, "generated_solution.py", "exec")
-    except SyntaxError as e:
-        return None, f"SyntaxError: {e}"
-    try:
-        fd, name = tempfile.mkstemp(prefix=".generated_", suffix=".py", dir=str(cwd))
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(code)
-        path = Path(name)
-        try:
-            timeout = int(os.environ.get("CODE_TIMEOUT_S", "20"))
-            stdout_limit = int(os.environ.get("CODE_STDOUT_MAX", "100000"))
-            stderr_limit = int(os.environ.get("CODE_STDERR_MAX", "20000"))
-            p = subprocess.Popen([sys.executable, str(path)], cwd=cwd,
-                                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                 text=True)
-            captured: dict = {}
-            threads = [
-                threading.Thread(target=_capture_pipe,
-                                 args=(p.stdout, stdout_limit, captured, "stdout")),
-                threading.Thread(target=_capture_pipe,
-                                 args=(p.stderr, stderr_limit, captured, "stderr")),
-            ]
-            for thread in threads:
-                thread.start()
-            try:
-                returncode = p.wait(timeout=timeout)
-            except subprocess.TimeoutExpired:
-                p.kill()
-                p.wait()
-                for thread in threads:
-                    thread.join()
-                return None, "program timeout"
-            for thread in threads:
-                thread.join()
-            stdout, stdout_truncated = captured.get("stdout", ("", False))
-            stderr, stderr_truncated = captured.get("stderr", ("", False))
-            if stdout_truncated:
-                return None, f"stdout exceeded {stdout_limit} characters"
-            if returncode != 0:
-                detail = stderr or stdout.strip() or f"exit code {returncode}"
-                if stderr_truncated:
-                    detail += "\n...[stderr truncated]"
-                return None, detail[:2000]
-            if not stdout.strip():
-                return None, "program produced no stdout"
-            return stdout, ""
-        finally:
-            try:
-                path.unlink()
-            except OSError:
-                pass
-    except OSError as e:
-        return None, f"cannot create generated program: {e}"
-
-
-async def solve_synthesis(llm: LLM, task_dir: Path, task: dict, log: list) -> Result:
-    """Solve a coding task with no repair target by executing generated code."""
-    ws = task_dir / "workspace"
-    cwd = ws if ws.is_dir() else task_dir
-    mode = "program"
-    context = workspace_preview(ws, budget=3_500)
-    question = f"Task: {instruction_core(task.get('instruction', ''))}\n\n{context}"
-    cost = 0.0
-
-    # Generated code gets one correction attempt.  The retry includes only
-    # the generated source and the local execution error, not a shell trace.
-    previous_code = ""
-    previous_error = ""
-    for attempt, model in enumerate((CHEAP, SECOND)):
-        if attempt == 0:
-            user = question
-        else:
-            user = (f"Task: {instruction_core(task.get('instruction', ''))}\n\n"
-                    f"Previous Python source:\n```python\n{previous_code}```\n\n"
-                    f"Execution error:\n{previous_error}\n\n"
-                    "Return only corrected Python source.")
-        reply, c = await llm.ask(SYS_PROGRAM, user, model=model, max_tokens=700)
-        cost += c
-        code = _strip_program_reply(reply)
-        stdout, error = await asyncio.to_thread(_run_generated_program, code, cwd)
-        log.append({"model": model, "mode": "program", "attempt": attempt,
-                    "prompt": user, "reply": reply, "code": code,
-                    "stdout": stdout, "error": error, "cost": c})
-        if stdout is not None:
-            answer = stdout.strip()
-            write_answer(task_dir, answer)
-            return Result(True, answer, cost)
-        if error.startswith("stdout exceeded"):
-            # Retrying cannot make an answer whose required stdout is larger
-            # than the hard output limit valid; avoid spending another call.
-            return Result(False, "", cost, f"generated program failed: {error}")
-        previous_code, previous_error = code, error
-    return Result(False, "", cost, f"generated program failed: {previous_error}")
-
-
 # ---------------------------------------------------------------- math
 def math_missing_numbers(instr: str) -> bool:
     """The first sentence (the starting state) has no number, e.g. 'A library owns some books.'"""
     first = re.split(r"(?<=[.?!])\s", instruction_core(instr), maxsplit=1)[0]
-    return not re.search(r"\d", first)
+    # "A tank is empty." / "A farmer keeps chickens and cows." are fine starts: only a
+    # vague amount means the starting value is really missing
+    return not re.search(r"\d", first) and bool(
+        re.search(r"\b(some|several|a few|many|a number of|certain|unknown|an? (?:unspecified|undisclosed))\b", first, re.I))
 
 
 def is_math_word_problem(task: dict) -> bool:
@@ -789,11 +495,38 @@ SYS_EXPR = ("Translate the word problem into ONE Python expression, do NOT compu
             "Use // for rounding down, ceil(a/b) for rounding up, % for remainder. Reply ONLY with the expression.")
 
 
-async def _math_try(llm: LLM, q: str, model: str, system: str, log: list) -> tuple[str | None, float, str]:
+SYS_PROG = ("Write a short Python program that computes the answer and stores it in variable x. "
+            "Do NOT compute anything yourself: translate the problem into code (loops are fine). "
+            "Allowed imports: math, fractions, itertools, functools, statistics. "
+            "Use fractions.Fraction for exact rational results; do not round or format x. "
+            "If the problem has no valid answer or lacks needed data, set x = None. "
+            "Reply ONLY with the code.")
+CHAIN = re.compile(r"(?:^|[.!?]\s+)(?:Then|After that|Next|Finally)\b")
+
+
+def math_route(q: str) -> list[str]:
+    """A chain of operations on one quantity ('starts with N. Then ... Then ...') is translated
+    line by line (steps, measured 82/82); everything else (puzzles, rates, dates, notation,
+    formatted answers) gets a real program."""
+    if pyrun.answer_format(q)[0] == "int" and len(CHAIN.findall(q)) >= 2:
+        return ["steps", "prog"]
+    return ["prog", "steps"]
+
+
+async def _math_try(llm: LLM, q: str, model: str, mode: str, log: list) -> tuple[str | None, float, str]:
     """(answer, cost, problem) for one translation of the question into code."""
+    if mode == "prog":
+        reply, c = await llm.ask(SYS_PROG, q, model=model, max_tokens=400)
+        r, err = await asyncio.to_thread(pyrun.run, pyrun.strip_code(reply))
+        ans = pyrun.format_value(r["x"], pyrun.answer_format(q)) if r else None
+        log.append({"model": model, "mode": mode, "prompt": q, "reply": reply, "answer": ans, "error": err, "cost": c})
+        if r and r["x"][0] == "none" and re.search(r"^\s*x\s*=\s*None\b", reply, re.M):
+            return None, c, "model says impossible"
+        return ans, c, ("" if ans is not None else f"program failed: {err or 'no x'}")
+    system = SYS_STEPS if mode == "steps" else SYS_EXPR
     reply, c = await llm.ask(system, q, model=model, max_tokens=300)
     ans = solve_reply(reply)
-    log.append({"model": model, "prompt": q, "reply": reply, "answer": ans, "cost": c})
+    log.append({"model": model, "mode": mode, "prompt": q, "reply": reply, "answer": ans, "cost": c})
     start = re.search(r"^\s*x\s*=\s*(-?\d+)\s*$", reply, flags=re.M)
     if start and start.group(1) == "1000" and "1000" not in re.findall(r"\d+", q):
         # "x = 1000" copied from the prompt example: the question has no starting value.
@@ -806,19 +539,21 @@ async def _math_try(llm: LLM, q: str, model: str, system: str, log: list) -> tup
 
 async def solve_math(llm: LLM, task_dir: Path, task: dict, log: list) -> Result:
     q = instruction_core(task["instruction"])
-    cost, ans, problem = 0.0, None, ""
-    for model in (CHEAP, SECOND):
-        ans, c, problem = await _math_try(llm, q, model, SYS_STEPS, log)
+    first, other = math_route(q)
+    cost, ans, problem, refusals = 0.0, None, "", 0
+    for model, mode in ((CHEAP, first), (SECOND, first), (CHEAP, other)):
+        ans, c, problem = await _math_try(llm, q, model, mode, log)
         cost += c
-        if ans is not None or problem.startswith("start value copied"):
+        refusals += problem == "model says impossible"
+        if ans is not None or problem.startswith("start value copied") or refusals == 2:
             break
     if ans is None:
         return Result(False, "", cost, problem)
     if task.get("_verify"):
-        async def alt(model, system):
-            a, c, _ = await _math_try(llm, q, model, system, log)
+        async def alt(model, mode):
+            a, c, _ = await _math_try(llm, q, model, mode, log)
             return a, c
-        ans, c = await cross_check(ans, [lambda: alt(SECOND, SYS_STEPS), lambda: alt(CHEAP, SYS_EXPR)], log)
+        ans, c = await cross_check(ans, [lambda: alt(SECOND, first), lambda: alt(CHEAP, other)], log)
         cost += c
     write_answer(task_dir, ans)
     return Result(True, ans, cost)
@@ -996,6 +731,53 @@ async def solve_search(llm: LLM, task_dir: Path, task: dict, log: list) -> Resul
     return Result(True, ans, cost)
 
 
+# ---------------------------------------------------------------- program output
+# "Write a program that ... and write ONLY its output to answer.txt": the model writes the
+# program, the wrapper runs it (pyrun: checked imports, read-only file access, CPU/memory
+# limits, a copy of the workspace) and writes stdout itself.
+SYS_PROGRAM = ("Write a Python 3 program that prints exactly the requested output and nothing else. "
+               "Read the input files from the current directory. Reply ONLY with the code.")
+PROGRAM_TASK = re.compile(r"\b(write|create|implement) a (?:short |small )?(?:program|script)\b|"
+                          r"\bwrite ONLY (?:its|the program'?s?) output\b", re.I)
+
+
+def is_program_task(task: dict) -> bool:
+    return bool(PROGRAM_TASK.search(task.get("instruction", "")))
+
+
+def program_output(stdout: str) -> str | None:
+    lines = [l.rstrip() for l in stdout.strip("\n").splitlines()]
+    out = "\n".join(lines).strip("\n")
+    return out if out.strip() else None
+
+
+async def _program_try(llm: LLM, ws: Path, user: str, model: str, log: list) -> tuple[str | None, float]:
+    reply, c = await llm.ask(SYS_PROGRAM, user, model=model, max_tokens=600)
+    r, err = await asyncio.to_thread(pyrun.run, pyrun.strip_code(reply), ws, pyrun.PROGRAM_MODULES)
+    ans = (program_output(r["stdout"]) or program_output(r["answer_file"])) if r else None
+    log.append({"model": model, "mode": "program", "reply": reply, "answer": ans, "error": err, "cost": c})
+    return ans, c
+
+
+async def solve_program(llm: LLM, task_dir: Path, task: dict, log: list) -> Result | None:
+    ws = task_dir / "workspace"
+    user = f"Task: {instruction_core(task['instruction'])}\n\n{workspace_preview(ws, budget=2500)}"
+    cost, ans = 0.0, None
+    for model in (CHEAP, SECOND):
+        ans, c = await _program_try(llm, ws, user, model, log)
+        cost += c
+        if ans is not None:
+            break
+    if ans is None:
+        return Result(False, "", cost, "program failed")
+    if task.get("_verify"):
+        alt = lambda: _program_try(llm, ws, user, SECOND, log)  # noqa: E731
+        ans, c = await cross_check(ans, [alt], log)
+        cost += c
+    write_answer(task_dir, ans)
+    return Result(True, ans, cost)
+
+
 # ---------------------------------------------------------------- generic agent
 def workspace_preview(ws: Path, budget: int = 3500) -> str:
     """File list + text files: whole when they are small (a 3 KB wiki page costs ~100 units
@@ -1068,9 +850,19 @@ async def solve_agent(llm: LLM, task_dir: Path, task: dict, log: list,
                      {"role": "user", "content": 'Reply with one json object: {"cmd": ...} or {"answer": ...}'}]
         elif "answer" in act:
             ans = str(act["answer"]).strip()
-            if (not ans or ans.upper().startswith("IMPOSSIBLE") or len(ans) > 80
+            if re.fullmatch(r"(?is)(all tests pass\w*|tests pass\w*|done)\W.*", ans) and re.search(r"\bDONE\b", task["instruction"]):
+                ans = "DONE"
+            if (not ans or ans.upper().startswith("IMPOSSIBLE") or (len(ans) > 80 and "\n" not in ans)
                     or re.search(r"\b(not (found|contain|available|present|provided)|no (information|data|record))\b", ans, re.I)):
                 return Result(False, "", cost, "model says impossible")
+            if ans.upper() == "DONE" and not re.search(r"\bDONE\b", task["instruction"]):
+                own = ws_cwd / "answer.txt"  # the agent wrote the real answer itself
+                if not own.is_file() or not own.read_text().strip() or own.read_text().strip() == "DONE":
+                    return Result(False, "", cost, "DONE for a task that wants a value")
+                ans = own.read_text().strip()
+            tgt = coding_target(task, ws) if ws.is_dir() else None
+            if ans.upper() == "DONE" and tgt and await asyncio.to_thread(run_tests, ws, tgt[0]):
+                return Result(False, "", cost, "agent says DONE, tests still fail")
             write_answer(task_dir, ans)
             return Result(True, ans, cost)
         else:
